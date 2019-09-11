@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+import React, {useEffect} from 'react';
 import PropTypes from 'prop-types';
 const canUseDOM = !!(
   (typeof window !== 'undefined' &&
@@ -13,61 +13,60 @@ export const IntercomAPI = (...args) => {
   }
 };
 
-export default class Intercom extends Component {
-  static propTypes = {
-    appID: PropTypes.string.isRequired,
-  };
+const Intercom = React.memo((props) => {
+  const {
+    appID,
+    ...otherProps,
+  } = props;
 
-  static displayName = 'Intercom';
+  if (!canUseDOM) return null
 
-  constructor(props) {
-    super(props);
+  useEffect(() => {
+    const initializeIntercom = () => {
+      if (!appID || !canUseDOM) {
+        return;
+      }
 
-    const {
-      appID,
-      ...otherProps,
-    } = props;
-
-    if (!appID || !canUseDOM) {
-      return;
-    }
-
-    if (!window.Intercom) {
-      (function(w, d, id, s, x) {
-        function i() {
+      if (!window.Intercom) {
+        (function (w, d, id, s, x) {
+          function i() {
             i.c(arguments);
-        }
-        i.q = [];
-        i.c = function(args) {
+          }
+          i.q = [];
+          i.c = function (args) {
             i.q.push(args);
-        };
-        w.Intercom = i;
-        s = d.createElement('script');
-        s.async = 1;
-        s.src = 'https://widget.intercom.io/widget/' + id;
-        d.head.appendChild(s);
-      })(window, document, appID);
+          };
+          w.Intercom = i;
+          s = d.createElement('script');
+          s.async = 1;
+          s.src = 'https://widget.intercom.io/widget/' + id;
+          d.head.appendChild(s);
+        })(window, document, appID);
+      }
+
+      window.intercomSettings = { ...otherProps, app_id: appID };
+
+      if (window.Intercom) {
+        window.Intercom('boot', otherProps);
+      }
     }
+    // initialized on mount, as shown by empty array in second param
+    initializeIntercom()
 
-    window.intercomSettings = { ...otherProps, app_id: appID };
+    // execute on what used to be componentWillUnmount()
+    return () => {
+      if (!canUseDOM || !window.Intercom) return false;
 
-    if (window.Intercom) {
-      window.Intercom('boot', otherProps);
+      window.Intercom('shutdown');
+
+      delete window.Intercom;
+      delete window.intercomSettings;
     }
-  }
+  }, [])
 
-  componentWillReceiveProps(nextProps) {
-    const {
-      appID,
-      ...otherProps,
-    } = nextProps;
-
-    if (!canUseDOM) return;
-
-    window.intercomSettings = { ...otherProps, app_id: appID };
-
-    if (window.Intercom) {
-      if (this.loggedIn(this.props) && !this.loggedIn(nextProps)) {
+  useEffect(() => {
+    const clearIntercom = () => {
+      if (window.Intercom) {
         // Shutdown and boot each time the user logs out to clear conversations
         window.Intercom('shutdown');
         window.Intercom('boot', otherProps);
@@ -75,26 +74,15 @@ export default class Intercom extends Component {
         window.Intercom('update', otherProps);
       }
     }
-  }
+    // executed when props.email or props.user_id change
+    clearIntercom()
+  }, [props.email, props.user_id])
 
-  shouldComponentUpdate() {
-    return false;
-  }
+  return false
+})
 
-  componentWillUnmount() {
-    if (!canUseDOM || !window.Intercom) return false;
+Intercom.propTypes = {
+  appID: PropTypes.string.isRequired,
+};
 
-    window.Intercom('shutdown');
-
-    delete window.Intercom;
-    delete window.intercomSettings;
-  }
-
-  loggedIn(props) {
-    return props.email || props.user_id;
-  }
-
-  render() {
-    return false;
-  }
-}
+export default Intercom
